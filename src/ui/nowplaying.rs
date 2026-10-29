@@ -22,23 +22,22 @@ pub(crate) fn render_nowplaying_view(
         return;
     }
 
-    // Split: album art + track info on top, a compact spectrum below, lifted a
-    // little off the bottom.
+    // Give the animation a proportional share of the screen, and protect the
+    // artwork and labels when the terminal becomes small.
+    let viz_height = if area.height >= 20 {
+        (area.height / 3).clamp(7, 20)
+    } else {
+        0
+    };
+    let gap = u16::from(viz_height > 0);
     let chunks = Layout::vertical([
-        Constraint::Min(6),    // art + text
-        Constraint::Length(7), // spectrum
-        Constraint::Length(2), // breathing room (lifts the spectrum up)
+        Constraint::Min(0),
+        Constraint::Length(gap),
+        Constraint::Length(viz_height),
     ])
     .split(area);
     let top = chunks[0];
-    // Push the art + info group down a little from the top.
-    let top = Rect {
-        x: top.x,
-        y: top.y + 3,
-        width: top.width,
-        height: top.height.saturating_sub(3),
-    };
-    let viz_area = chunks[1];
+    let viz_area = chunks[2];
 
     // Derive the cover's cell footprint from the terminal's font aspect so a
     // square image renders square (and our centering math is exact).
@@ -48,7 +47,7 @@ pub(crate) fn render_nowplaying_view(
 
     // Reserve 3 rows for text (+1 gap). Cap the art so the group stays compact.
     let avail_h = top.height.saturating_sub(4);
-    let mut art_h = avail_h.clamp(3, 14);
+    let mut art_h = avail_h.min(18);
     // Square image width in cells for this height: w = h * fh / fw.
     let mut art_w = (art_h as u32 * fh / fw) as u16;
     if art_w > top.width {
@@ -56,7 +55,7 @@ pub(crate) fn render_nowplaying_view(
         art_h = (art_w as u32 * fw / fh) as u16;
     }
 
-    let group_h = art_h + 4; // art + gap + title + artist + album
+    let group_h = art_h.saturating_add(4); // art + gap + title + artist + album
     let art_y = top.y + top.height.saturating_sub(group_h) / 2;
     let art_x = top.x + top.width.saturating_sub(art_w) / 2;
     let art_rect = Rect {
@@ -85,9 +84,12 @@ pub(crate) fn render_nowplaying_view(
     if let Some(n) = app.playback.now.as_ref() {
         let text_rect = Rect {
             x: top.x,
-            y: art_rect.y + art_h + 1,
+            y: (art_rect.y + art_h + 1).min(top.bottom()),
             width: top.width,
-            height: 3,
+            height: top
+                .bottom()
+                .saturating_sub((art_rect.y + art_h + 1).min(top.bottom()))
+                .min(3),
         };
         let lines = vec![
             Line::from(Span::styled(

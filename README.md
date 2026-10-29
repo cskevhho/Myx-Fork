@@ -77,8 +77,8 @@ from the Spotify Web API client ID. In Spotify's device picker, select
 the launcher stops its receiver when Myx exits. You can set `SOLOIST_API_KEY`
 in the environment instead of saving a key file.
 
-Soloist handles the audio stream, so Myx's equalizer and audio visualizer are
-unavailable in this mode. Radio is unavailable, and explicit track lists are
+Soloist handles the audio stream, so Myx's equalizer and audio-reactive spectrum
+are unavailable in this mode. The character field follows playback time instead. Radio is unavailable, and explicit track lists are
 limited to 100 items. Spotify restricts playlist track lists to playlists you
 own or collaborate on; other playlists can still be played as a whole.
 
@@ -140,6 +140,9 @@ inside tmux. If your tmux has no sixel support, add `set -g focus-events on` to
 `transparent` commented out, so there is a file to edit and nothing to look up:
 
 ```toml
+# Set true to freeze the character animation.
+reduced_motion = false
+
 # Rows kept visible above and below the cursor before the list scrolls.
 scrolloff = 3
 

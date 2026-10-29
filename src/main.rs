@@ -660,7 +660,8 @@ async fn run_ui(
                 let animating = app.theme.fade.is_some()
                     || (app.view.mode == RightView::Lyrics && app.view.lyrics_synced)
                     || (app.view.mode == RightView::NowPlaying
-                        && app.svc.engine.bands.try_lock().map(|g| g.is_active).unwrap_or(false));
+                        && !myx::config::get().reduced_motion
+                        && app.playback.now.as_ref().is_some_and(|n| n.is_playing));
                 if app.art_repaint != ArtRepaint::Idle {
                     dirty = true;
                 }

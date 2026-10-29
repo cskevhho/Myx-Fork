@@ -1,97 +1,90 @@
-//! The spectrum bars drawn under the album art.
-
+//! A restrained character field: spectrum-driven on native playback and
+//! playback-timed ambient motion on Soloist, which does not expose audio data.
 use crate::*;
 
+const BAYER: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
+const GLYPHS: [&str; 12] = [
+    "音", "波", "流", "光", "響", "空", "カ", "ナ", "ミ", "ノ", "サ", "リ",
+];
+
 pub(crate) fn render_visualizer(f: &mut Frame, app: &App, theme: Theme, area: Rect) {
-    let active = app
+    if area.height < 4 || area.width < 16 {
+        return;
+    }
+    let audio = app
         .svc
         .engine
         .bands
         .try_lock()
-        .map(|g| g.is_active)
-        .unwrap_or(false);
-    if !active {
-        return;
-    }
-    let Ok(guard) = app.svc.engine.bands.try_lock() else {
-        return;
+        .ok()
+        .and_then(|g| g.is_active.then_some((g.values, g.peak_envelope.max(1e-6))));
+    let label = if audio.is_some() {
+        "SPECTRUM"
+    } else {
+        "AMBIENT · PLAYBACK MOTION"
     };
-    let values: [f32; NUM_BANDS] = guard.values;
-    let peak = guard.peak_envelope.max(1e-6);
-    drop(guard);
-
-    // Cap the spectrum to a centered band — full-pane bars are too tall/wide.
-    let vh = ((area.height as u32 * 3 / 5) as u16)
-        .clamp(6, 14)
-        .min(area.height);
-    let vw = ((area.width as u32 * 9 / 10) as u16)
-        .clamp(24, 80)
-        .min(area.width);
-    let vrect = Rect {
-        x: area.x + area.width.saturating_sub(vw) / 2,
-        y: area.y + area.height.saturating_sub(vh) / 2,
-        width: vw,
-        height: vh,
+    f.render_widget(
+        Paragraph::new(label)
+            .style(theme.muted())
+            .alignment(Alignment::Center),
+        Rect { height: 1, ..area },
+    );
+    let rect = Rect {
+        y: area.y + 1,
+        height: area.height - 1,
+        ..area
     };
-    let w = vrect.width as usize;
-    let h = vrect.height as usize;
-    if w == 0 || h == 0 {
-        return;
-    }
-
-    // 1. Box-average the bands into each column (anti-aliasing vs. single-pick).
-    let mut cols = vec![0.0f32; w];
-    for (x, c) in cols.iter_mut().enumerate() {
-        let lo = x * NUM_BANDS / w;
-        let hi = (((x + 1) * NUM_BANDS / w).max(lo + 1)).min(NUM_BANDS);
-        let sum: f32 = values[lo..hi].iter().sum();
-        let v = sum / (hi - lo) as f32;
-        // Perceptual curve so quiet detail stays visible.
-        *c = (v / peak).sqrt().clamp(0.0, 1.0);
-    }
-
-    // 2. Spatial smoothing — a couple of weighted passes so the envelope flows
-    //    instead of spiking. This is what kills the "chopped" look.
-    for _ in 0..2 {
-        let src = cols.clone();
-        for x in 0..w {
-            let l = src[x.saturating_sub(1)];
-            let r = src[(x + 1).min(w - 1)];
-            cols[x] = l * 0.25 + src[x] * 0.5 + r * 0.25;
-        }
-    }
-
-    // 3. Render with an eighth-block sub-cell tip and a vertical color gradient
-    //    (info at the base → primary → accent at the peaks) for a smooth wash.
-    const LEVELS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let time = if myx::config::get().reduced_motion {
+        0.0
+    } else {
+        app.playback.position_ms() as f32 / 1000.0
+    };
+    let columns = (rect.width as usize / 2).min(80);
+    let height = rect.height.min(20) as usize;
+    let x_offset = (rect.width.saturating_sub((columns * 2) as u16)) / 2;
+    let y_offset = (rect.height.saturating_sub(height as u16)) / 2;
     let stops = [theme.info, theme.primary, theme.accent];
-
-    let mut lines: Vec<Line> = Vec::with_capacity(h);
-    for row in 0..h {
-        let from_bottom = (h - 1 - row) as f32;
-        let vfrac = if h > 1 {
-            from_bottom / (h - 1) as f32
-        } else {
-            0.0
-        };
-        let color: ratatui::style::Color = gradient::interpolate(&stops, vfrac).into();
-        let mut spans: Vec<Span> = Vec::with_capacity(w);
-        for &v in &cols {
-            let filled = v * h as f32 - from_bottom;
-            let ch = if filled >= 1.0 {
-                '█'
-            } else if filled <= 0.0 {
-                ' '
+    let mut lines = Vec::with_capacity(height);
+    for y in 0..height {
+        let mut spans = Vec::with_capacity(columns);
+        for x in 0..columns {
+            let xf = x as f32 / columns.max(1) as f32;
+            let yf = y as f32 / height.max(1) as f32;
+            // Superimposed travelling ripples echo the organic koi motion in
+            // astro-v1; fixed Bayer thresholds keep the texture stable.
+            let wave =
+                (xf * 13.0 - time * 0.65).sin() * 0.16 + (xf * 21.0 + time * 0.38).sin() * 0.09;
+            let amplitude = audio
+                .as_ref()
+                .map(|(values, peak)| {
+                    let index = (x * NUM_BANDS / columns.max(1)).min(NUM_BANDS - 1);
+                    (values[index] / peak).sqrt().clamp(0.0, 1.0)
+                })
+                .unwrap_or(0.5);
+            let distance = (yf - (0.5 + wave)).abs();
+            let intensity = ((0.30 + amplitude * 0.20 - distance) * 2.2).clamp(0.0, 1.0);
+            let threshold = (BAYER[y % 4][x % 4] as f32 + 0.5) / 16.0;
+            let glyph = if intensity <= threshold {
+                "  "
+            } else if intensity < 0.42 {
+                "· "
+            } else if intensity < 0.7 {
+                ": "
             } else {
-                LEVELS[((filled * 8.0) as usize).clamp(1, 8) - 1]
+                GLYPHS[(x * 17 + y * 7) % GLYPHS.len()]
             };
-            if ch == ' ' {
-                spans.push(Span::raw(" "));
-            } else {
-                spans.push(Span::styled(ch.to_string(), Style::default().fg(color)));
-            }
+            let color = gradient::interpolate(&stops, (1.0 - yf).clamp(0.0, 1.0));
+            spans.push(Span::styled(glyph, Style::default().fg(color.into())));
         }
         lines.push(Line::from(spans));
     }
-    f.render_widget(Paragraph::new(lines), vrect);
+    f.render_widget(
+        Paragraph::new(lines),
+        Rect {
+            x: rect.x + x_offset,
+            y: rect.y + y_offset,
+            width: (columns * 2) as u16,
+            height: height as u16,
+        },
+    );
 }

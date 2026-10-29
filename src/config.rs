@@ -34,6 +34,8 @@ pub struct Config {
     /// key is missing; the first-run template sets it, so new installs start
     /// transparent. `T` in the app flips it and rewrites the line.
     pub transparent: bool,
+    /// Freeze decorative animation while preserving playback information.
+    pub reduced_motion: bool,
 }
 
 impl Default for Config {
@@ -46,6 +48,7 @@ impl Default for Config {
             bitrate: 160,
             normalize_volume: false,
             transparent: false,
+            reduced_motion: false,
         }
     }
 }
@@ -89,6 +92,7 @@ const TEMPLATE: &str = "\
 # Leave the background to the terminal — its own colour, opacity and blur —
 # instead of the album-tinted one. Text and accents still follow the cover.
 # Press T in myx to flip it; this line is rewritten when you do.
+# Set reduced_motion = true to freeze the character visual.
 transparent = true
 ";
 
