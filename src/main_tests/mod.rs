@@ -13,3 +13,5 @@ mod theme;
 /// They catch Spotify changing an endpoint out from under the artist page,
 /// which is how the 403/400 pair that emptied it went unnoticed.
 mod live;
+
+mod playback_recovery;

@@ -54,20 +54,33 @@ pub(crate) fn retry_delay(retry_after: Option<u64>) -> Option<Duration> {
     }
 }
 
-/// GET a JSON endpoint, retrying on 429 (respecting Retry-After).
+/// Preserve HTTP failures so callers can distinguish restricted and empty lists.
+#[derive(Debug)]
+pub(crate) enum ApiError {
+    Http(u16),
+    RateLimited,
+    Transport,
+    InvalidJson,
+}
+
 pub(crate) fn get_json(
     client: &reqwest::blocking::Client,
     url: &str,
     token: &str,
 ) -> Option<serde_json::Value> {
+    get_json_result(client, url, token).ok()
+}
+
+pub(crate) fn get_json_result(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    token: &str,
+) -> std::result::Result<serde_json::Value, ApiError> {
     for _ in 0..5 {
-        let resp = match client.get(url).bearer_auth(token).send() {
-            Ok(r) => r,
-            Err(e) => {
-                liblog(format!("api: {url} transport error: {e}"));
-                return None;
-            }
-        };
+        let resp = client.get(url).bearer_auth(token).send().map_err(|e| {
+            liblog(format!("api: {url} transport error: {e}"));
+            ApiError::Transport
+        })?;
         if resp.status().as_u16() == 429 {
             let after = resp
                 .headers()
@@ -78,19 +91,21 @@ pub(crate) fn get_json(
                 liblog(format!(
                     "api: {url} -> 429, retry-after {after:?}s, giving up"
                 ));
-                return None;
+                return Err(ApiError::RateLimited);
             };
             std::thread::sleep(wait);
             continue;
         }
         if !resp.status().is_success() {
-            // Swallowing the status made a dead endpoint look like an empty one.
-            liblog(format!("api: {url} -> HTTP {}", resp.status().as_u16()));
-            return None;
+            let status = resp.status().as_u16();
+            liblog(format!("api: {url} -> HTTP {status}"));
+            return Err(ApiError::Http(status));
         }
-        return resp.json::<serde_json::Value>().ok();
+        return resp
+            .json::<serde_json::Value>()
+            .map_err(|_| ApiError::InvalidJson);
     }
-    None
+    Err(ApiError::RateLimited)
 }
 
 /// How long a cached catalogue response counts as fresh. Discographies and

@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
                     EngineEvent::Playing { uri, position_ms } => println!("▶ playing   {uri} @ {position_ms}ms"),
                     EngineEvent::Paused { uri, position_ms } => println!("⏸ paused    {uri} @ {position_ms}ms"),
                     EngineEvent::EndOfTrack { uri } => println!("⏹ end       {uri}"),
+                    EngineEvent::Failed { message } => eprintln!("playback failed: {message}"),
                     EngineEvent::Stopped => println!("⏹ stopped"),
                     EngineEvent::Reconnecting => println!("⟳ access point lost, reconnecting"),
                     EngineEvent::Reconnected => println!("⟳ reconnected"),

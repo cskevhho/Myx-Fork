@@ -26,6 +26,7 @@ pub(crate) fn handle_engine_event(
             }
         }
         EngineEvent::Playing { position_ms, .. } => {
+            app.status.clear();
             if !app.transport.playback_started {
                 app.transport.playback_started = true;
                 // Reapply persisted modes + volume to the freshly-started playback.
@@ -52,6 +53,17 @@ pub(crate) fn handle_engine_event(
                 let _ = controls.set_playback(MediaPlayback::Paused {
                     progress: Some(MediaPosition(Duration::from_millis(position_ms as u64))),
                 });
+            }
+        }
+        EngineEvent::Failed { message } => {
+            app.status = message;
+            app.playback.now = None;
+            app.transport.playback_started = false;
+            // Reject metadata replies from the failed request, which would
+            // otherwise clear the error and invent a paused now-playing track.
+            app.session.pending_meta = Some(String::new());
+            if let Some(controls) = app.media_controls.as_mut() {
+                let _ = controls.set_playback(MediaPlayback::Stopped);
             }
         }
         EngineEvent::Stopped => {

@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Run Myx's interface with Spotify's official receiver as the audio backend.
+set -euo pipefail
+
+export MYX_SOLOIST_BIN="${MYX_SOLOIST_BIN:-soloist}"
+export MYX_SOLOIST_DATA_DIR="${MYX_SOLOIST_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/myx/soloist}"
+export MYX_SOLOIST_DEVICE="${MYX_SOLOIST_DEVICE:-Myx (Soloist)}"
+export MYX_BACKEND=soloist
+myx_binary="${MYX_BIN:-myx}"
+key_file="${XDG_CONFIG_HOME:-$HOME/.config}/myx/soloist_api_key"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/myx/soloist"
+
+command -v "$MYX_SOLOIST_BIN" >/dev/null || { echo 'Install Spotify Soloist first: https://developer.spotify.com/documentation/soloist/tutorials/getting-started' >&2; exit 1; }
+command -v "$myx_binary" >/dev/null || { echo 'Build or install this Myx fork first.' >&2; exit 1; }
+umask 077
+mkdir -p "$MYX_SOLOIST_DATA_DIR" "$cache_dir"
+# This Linux launcher owns one receiver per data directory.
+exec 9>"$MYX_SOLOIST_DATA_DIR/launcher.lock"
+flock -n 9 || { echo 'Myx Soloist is already running.' >&2; exit 1; }
+if [[ -n "${SOLOIST_API_KEY:-}" ]]; then
+    soloist_key="$SOLOIST_API_KEY"
+elif [[ -s "$key_file" ]]; then
+    soloist_key="$(<"$key_file")"
+else
+    printf '%s\n' 'Generate your Soloist API key here:' \
+        'https://developer.spotify.com/dashboard/soloist' \
+        'This is a separate key from your Spotify app Client ID.'
+    if [[ ! -t 0 ]]; then
+        echo "Run myx-soloist in a terminal to save the key privately." >&2
+        exit 1
+    fi
+    read -r -s -p 'Soloist API key (hidden): ' soloist_key
+    printf '\n'
+    [[ -n "$soloist_key" ]] || { echo 'No key entered.' >&2; exit 1; }
+    mkdir -p "$(dirname "$key_file")"
+    printf '%s\n' "$soloist_key" > "$key_file"
+    chmod 600 "$key_file"
+fi
+
+# Own only the process launched here; never kill another receiver or reuse its identity.
+"$MYX_SOLOIST_BIN" --device-name "$MYX_SOLOIST_DEVICE" --api-key "$soloist_key" \
+    --data-dir "$MYX_SOLOIST_DATA_DIR" --cache-dir "$cache_dir" \
+    --initial-volume 40 --ws 127.0.0.1:0 > "$cache_dir/receiver.log" 2>&1 &
+receiver_pid=$!
+unset soloist_key SOLOIST_API_KEY
+cleanup() { kill "$receiver_pid" 2>/dev/null || true; wait "$receiver_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+ready=false
+for ((attempt=0; attempt<100; attempt++)); do
+    if ! kill -0 "$receiver_pid" 2>/dev/null; then
+        echo "Soloist exited. See $cache_dir/receiver.log" >&2
+        exit 1
+    fi
+    if [[ -s "$MYX_SOLOIST_DATA_DIR/ws.port" ]] && \
+        "$MYX_SOLOIST_BIN" ctl --data-dir "$MYX_SOLOIST_DATA_DIR" status >/dev/null 2>&1; then
+        ready=true
+        break
+    fi
+    sleep 0.1
+done
+if [[ "$ready" != true ]]; then
+    echo "Soloist did not start. See $cache_dir/receiver.log" >&2
+    exit 1
+fi
+printf 'On first use, open Spotify and select "%s" in the device picker.\n' "$MYX_SOLOIST_DEVICE"
+"$myx_binary" "$@"

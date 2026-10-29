@@ -11,3 +11,12 @@ assets/*.png
 # editor / os cruft
 **/*.rs.bk
 .DS_Store
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+**/soloist_api_key
+**/client_id
+**/credentials.json
+**/webapi.json

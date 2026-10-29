@@ -140,29 +140,78 @@ pub(crate) fn fetch_detail_blocking(token: &str, uri: &str, name: &str) -> (Stri
             }
         }
         "playlist" => {
-            // Follow `next` instead of taking only the first page: playlists
-            // routinely exceed the 100-item page size, and the drill-in list
-            // (plus "play from this track") was silently truncated.
-            let before = items.len();
-            items.extend(fetch_all_pages(
+            items.extend(fetch_playlist_items(
                 &client,
-                &format!("{API}/playlists/{id}/items?limit=100"),
                 token,
-                None, // items[] is top-level on this endpoint
-                10,   // 1,000 tracks, matching the other sections' ceiling
-                parse_playlist_track,
+                format!("{API}/playlists/{id}/items?limit=50"),
             ));
-            if items.len() == before {
-                // Some third-party playlists 403 even on /items. `fetch_all_pages`
-                // has no error channel, so an empty result is indistinguishable
-                // from an empty playlist — say both rather than showing a blank
-                // pane with no explanation.
-                items.push(LibItem::header("no tracks — empty or restricted"));
-            }
         }
         _ => {}
     }
 
     liblog(format!("detail: {} rows for {uri}", items.len()));
     (name.to_string(), items)
+}
+
+/// A playlist failure is a visible result, never an invented empty playlist.
+/// Keep already-loaded tracks if a later page fails.
+pub(crate) fn fetch_playlist_items(
+    client: &reqwest::blocking::Client,
+    token: &str,
+    first_url: String,
+) -> Vec<LibItem> {
+    let mut items = Vec::new();
+    let mut url = Some(first_url);
+    for _ in 0..20 {
+        let Some(current) = url.take() else {
+            break;
+        };
+        match get_json_result(client, &current, token) {
+            Ok(value) => {
+                items.extend(
+                    value["items"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(parse_playlist_track),
+                );
+                url = value["next"].as_str().map(String::from);
+            }
+            Err(error) => {
+                let messages = match error {
+                    ApiError::Http(403) => vec![
+                        "Spotify denied access (403)".to_string(),
+                        "Tracks require owner/collaborator access".into(),
+                        "Play the whole playlist, or Esc to go back".into(),
+                    ],
+                    ApiError::Http(status) => vec![
+                        format!("Spotify request failed (HTTP {status})"),
+                        "Esc to go back; try again later".into(),
+                    ],
+                    ApiError::RateLimited => vec![
+                        "Spotify rate limit reached (429)".into(),
+                        "Wait before trying again; Esc to go back".into(),
+                    ],
+                    ApiError::Transport => vec![
+                        "Could not reach Spotify".into(),
+                        "Check your connection; Esc to go back".into(),
+                    ],
+                    ApiError::InvalidJson => vec!["Spotify returned an invalid response".into()],
+                };
+                items.extend(
+                    messages
+                        .into_iter()
+                        .map(|message| LibItem::header(&message)),
+                );
+                return items;
+            }
+        }
+    }
+    if url.is_some() {
+        items.push(LibItem::header("Showing the first 1,000 tracks"));
+    }
+    if items.is_empty() {
+        items.push(LibItem::header("This playlist is empty"));
+    }
+    items
 }

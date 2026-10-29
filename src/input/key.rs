@@ -75,6 +75,11 @@ pub(crate) fn handle_key(
     }
 
     match code {
+        KeyCode::Char('e') if !app.svc.engine.supports_equalizer() => {
+            app.status =
+                "Equalizer is available with native playback; Soloist owns the audio output."
+                    .into();
+        }
         KeyCode::Char('e') => {
             app.view.equalizer = Some(EqualizerOverlay::default());
         }

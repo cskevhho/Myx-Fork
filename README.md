@@ -60,6 +60,28 @@ myx
 First launch opens your browser to log in (OAuth PKCE, no secret needed). Then
 browse with `↑↓` and hit `⏎` to play. After that, just `myx`.
 
+## Spotify Soloist playback (Linux)
+
+Spotify Soloist can provide audio when librespot cannot obtain audio keys. Install
+Spotify's [official Linux x86-64 receiver](https://developer.spotify.com/documentation/soloist/tutorials/getting-started)
+and build Myx with `cargo build --release`. Run:
+
+```sh
+MYX_BIN=./target/release/myx ./scripts/myx-soloist
+```
+
+On first launch the script prompts privately for a Soloist API key and saves it
+in `~/.config/myx/soloist_api_key` (mode 0600). Generate this key separately
+from the Spotify Web API client ID. In Spotify's device picker, select
+**Myx (Soloist)** to pair it. Soloist's local control socket binds to loopback;
+the launcher stops its receiver when Myx exits. You can set `SOLOIST_API_KEY`
+in the environment instead of saving a key file.
+
+Soloist handles the audio stream, so Myx's equalizer and audio visualizer are
+unavailable in this mode. Radio is unavailable, and explicit track lists are
+limited to 100 items. Spotify restricts playlist track lists to playlists you
+own or collaborate on; other playlists can still be played as a whole.
+
 ## Keys
 
 ```
