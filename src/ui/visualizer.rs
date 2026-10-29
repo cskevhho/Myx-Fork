@@ -1,7 +1,6 @@
 //! An animated koi pond, adapted from astro-v1's ASCII koi geometry.
 use crate::*;
 
-const BAYER: [[u8; 4]; 4] = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
 const PROFILE: [(f32, f32); 9] = [
     (0.0, 0.0),
     (0.025, 0.052),
@@ -147,25 +146,29 @@ fn fish_at(width: usize, height: usize, time: f32, kind: usize) -> Fish {
     let w = width as f32;
     let h = height as f32 * 2.0;
     let length = (w * 0.29).min(h * 1.15).clamp(8.0, 32.0);
-    let phase = time * if kind == 0 { 0.16 } else { -0.13 } + kind as f32 * 2.4;
-    let rx = (w * 0.5 - length * 0.65).max(0.0);
-    let ry = (h * 0.5 - length * 0.45).max(0.0);
-    let direction = if kind == 0 { 1.0 } else { -1.0 };
-    let dx = -phase.sin() * rx * direction;
-    let dy = phase.cos() * ry * direction;
+    // Each fish follows a different combination of slow, incommensurate waves.
+    // The bounded path and analytic tangent give wandering without abrupt turns.
+    let k = kind as f32;
+    let rx = (w * 0.5 - length * 0.75).max(0.0);
+    let ry = (h * 0.5 - length * 0.75).max(0.0);
+    let a = time * (0.082 + k * 0.009) + k * 2.17;
+    let b = time * (0.057 + k * 0.007) + k * 1.31;
+    let c = time * (0.049 + k * 0.006) + k * 0.91;
+    let d = time * (0.071 + k * 0.008) + k * 2.83;
+    let dx = rx * (0.66 * a.cos() * (0.082 + k * 0.009) + 0.34 * b.cos() * (0.057 + k * 0.007));
+    let dy = ry * (-0.64 * c.sin() * (0.049 + k * 0.006) - 0.36 * d.sin() * (0.071 + k * 0.008));
     let heading = if dx.abs() + dy.abs() < 0.001 {
         0.0
     } else {
         dy.atan2(dx)
     };
-    // Route the body centre; the glyph sampler's origin is the nose.
     Fish {
-        x: w * 0.5 + rx * phase.cos() + heading.cos() * length * 0.4,
-        y: h * 0.5 + ry * phase.sin() + heading.sin() * length * 0.4,
+        x: w * 0.5 + rx * (0.66 * a.sin() + 0.34 * b.sin()) + heading.cos() * length * 0.4,
+        y: h * 0.5 + ry * (0.64 * c.cos() + 0.36 * d.cos()) + heading.sin() * length * 0.4,
         heading,
         length,
-        phase: kind as f32 * 2.1,
-        kind,
+        phase: k * 2.1,
+        kind: kind % 2,
     }
 }
 
@@ -173,63 +176,32 @@ pub(crate) fn render_visualizer(f: &mut Frame, app: &App, theme: Theme, area: Re
     if area.height < 5 || area.width < 18 {
         return;
     }
-    let width = usize::from(area.width.min(120));
-    let height = usize::from((area.height - 1).min(20));
+    let width = usize::from(area.width);
+    let height = usize::from(area.height);
     let time = if myx::config::get().reduced_motion {
         0.0
     } else {
         app.playback.position_ms() as f32 / 1000.0
     };
-    let fishes = [
-        fish_at(width, height, time, 0),
-        fish_at(width, height, time, 1),
-    ];
-    let mut lines = Vec::with_capacity(height);
+    let fishes = std::array::from_fn::<_, 4, _>(|kind| fish_at(width, height, time, kind));
+    // Draw only fish cells; do not fill the background, so the terminal's
+    // own background and the text drawn later remain unchanged.
+    let buffer = f.buffer_mut();
     for y in 0..height {
-        let mut spans = Vec::with_capacity(width);
         for x in 0..width {
-            let sample = fishes.iter().find_map(|fish| {
+            if let Some((glyph, kind)) = fishes.iter().find_map(|fish| {
                 fish_glyph(*fish, x as f32, y as f32 * 2.0, time).map(|glyph| (glyph, fish.kind))
-            });
-            let (glyph, color) = match sample {
-                Some((glyph, kind)) => (
-                    glyph,
-                    if kind == 0 {
-                        theme.primary
-                    } else {
-                        theme.accent
-                    },
-                ),
-                None => {
-                    // Quiet ordered-dither water lets the koi silhouettes read.
-                    let ripple = (x as f32 * 0.11 + y as f32 * 0.35 - time * 0.35).sin();
-                    let dither = BAYER[y % 4][x % 4] as f32 / 16.0;
-                    let mark = if ripple > 0.65 && dither > 0.77 {
-                        '·'
-                    } else if ripple < -0.82 && dither > 0.88 {
-                        'ｶ'
-                    } else {
-                        ' '
-                    };
-                    (mark, theme.border_dimmest)
-                }
-            };
-            spans.push(Span::styled(
-                glyph.to_string(),
-                Style::default().fg(color.into()),
-            ));
+            }) {
+                let cell = &mut buffer[(area.x + x as u16, area.y + y as u16)];
+                cell.set_char(glyph);
+                cell.set_fg(if kind == 0 {
+                    theme.primary.into()
+                } else {
+                    theme.accent.into()
+                });
+            }
         }
-        lines.push(Line::from(spans));
     }
-    f.render_widget(
-        Paragraph::new(lines),
-        Rect {
-            x: area.x + (area.width - width as u16) / 2,
-            y: area.y + (area.height - height as u16) / 2,
-            width: width as u16,
-            height: height as u16,
-        },
-    );
 }
 
 #[cfg(test)]

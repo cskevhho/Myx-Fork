@@ -22,22 +22,7 @@ pub(crate) fn render_nowplaying_view(
         return;
     }
 
-    // Give the animation a proportional share of the screen, and protect the
-    // artwork and labels when the terminal becomes small.
-    let viz_height = if area.height >= 20 {
-        (area.height / 3).clamp(7, 20)
-    } else {
-        0
-    };
-    let gap = u16::from(viz_height > 0);
-    let chunks = Layout::vertical([
-        Constraint::Min(0),
-        Constraint::Length(gap),
-        Constraint::Length(viz_height),
-    ])
-    .split(area);
-    let top = chunks[0];
-    let viz_area = chunks[2];
+    let top = area;
 
     // Derive the cover's cell footprint from the terminal's font aspect so a
     // square image renders square (and our centering math is exact).
@@ -107,13 +92,14 @@ pub(crate) fn render_nowplaying_view(
                 theme.muted(),
             )),
         ];
+        // Blank the label rows before painting the text so a fish passing
+        // behind a short title cannot visually merge with its letters.
+        f.render_widget(Clear, text_rect);
         f.render_widget(
             Paragraph::new(lines).alignment(Alignment::Center),
             text_rect,
         );
     }
-
-    render_visualizer(f, app, theme, viz_area);
 }
 
 /// Slim persistent bottom strip: play state + track, then the progress bar.

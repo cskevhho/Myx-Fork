@@ -41,6 +41,10 @@ pub(crate) fn render(f: &mut Frame, app: &App, out: &mut FrameOut, repaint: ArtR
     ])
     .split(area);
 
+    // Fish are background decoration. Foreground views and overlays are drawn
+    // afterward, keeping text, artwork, and controls above them.
+    render_visualizer(f, app, theme, rows[2]);
+
     // Header: wordmark + view tabs (right-aligned) + status.
     // Fullwidth wordmark (each letter = 2 cells) reads as a bigger "myx"
     // than the terminal font allows on a single row; bolded for weight.

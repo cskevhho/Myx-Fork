@@ -653,13 +653,11 @@ async fn run_ui(
                     }
                 }
 
-                // The visualizer only animates while it is on screen; on Queue
-                // its frame rate buys nothing. Synced lyrics move too — at the
-                // idle rate the highlighted line lands half a second late.
+                // Animate the background while playing; synced lyrics also
+                // need timely updates independent of the koi.
                 let animating = app.theme.fade.is_some()
                     || (app.view.mode == RightView::Lyrics && app.view.lyrics_synced)
-                    || (app.view.mode == RightView::NowPlaying
-                        && !myx::config::get().reduced_motion
+                    || (!myx::config::get().reduced_motion
                         && app.playback.now.as_ref().is_some_and(|n| n.is_playing));
                 if app.art_repaint != ArtRepaint::Idle {
                     dirty = true;

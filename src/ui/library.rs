@@ -135,6 +135,9 @@ pub(crate) fn render_library(
             height: 1,
         };
 
+        // The fish live behind the content; clear each occupied row so their
+        // glyphs cannot appear inside or beside list labels.
+        f.render_widget(Clear, rect);
         // Header rows: a bold section label (Home feed groups), not selectable.
         if item.is_header() {
             f.render_widget(
