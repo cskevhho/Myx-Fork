@@ -23,6 +23,12 @@ mkdir -p "$MYX_SOLOIST_DATA_DIR" "$cache_dir"
 # This Linux launcher owns one receiver per data directory.
 exec 9>"$MYX_SOLOIST_DATA_DIR/launcher.lock"
 flock -n 9 || { echo 'Myx Soloist is already running.' >&2; exit 1; }
+# Reuse an already-running receiver, including one paired before this launcher.
+# Its lifecycle belongs to the process that started it, so leave it running.
+if "$MYX_SOLOIST_BIN" ctl --data-dir "$MYX_SOLOIST_DATA_DIR" status 2>/dev/null | grep -q '^soloist: running'; then
+    "$myx_binary" "$@"
+    exit $?
+fi
 if [[ -n "${SOLOIST_API_KEY:-}" ]]; then
     soloist_key="$SOLOIST_API_KEY"
 elif [[ -s "$key_file" ]]; then
