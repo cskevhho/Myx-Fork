@@ -5,8 +5,8 @@
 //!   * the **dominant** swatch sets a base hue that tints all three background
 //!     layers and the border shades — this is what makes the whole UI feel like
 //!     it *belongs* to the album;
-//!   * the most **vibrant** swatch becomes `primary`, the most **hue-distant**
-//!     vibrant swatch becomes `accent`, giving contrast that isn't muddy;
+//!   * the dominant chromatic swatch drives text and `primary`; a contrasting
+//!     swatch supplies `accent` while near-neutral covers use a colorful fallback;
 //!   * status colors snap to the nearest palette swatch of the right hue when one
 //!     exists, otherwise fall back to a sensible synthesized tone.
 //!
@@ -48,14 +48,22 @@ fn nearest_hue(swatches: &[Rgb], target_hue: f32, max_dist: f32) -> Option<Rgb> 
 const FULL_TINT_AT: f32 = 0.35;
 
 fn theme_from_swatches(swatches: &[Rgb], name: &'static str) -> Theme {
-    // The dominant swatch is usually the surface hue, but a white or black cover
-    // has no hue at all — `rgb_to_hsl` reports 0 for grey, and 0 is red. Take the
-    // hue from the most saturated swatch that has one instead.
+    // A white or black cover has little useful hue. Prepare the most saturated
+    // swatch as a fallback before testing the dominant swatch below.
     let hue_src = swatches
         .iter()
         .copied()
         .max_by(|&a, &b| rgb_to_hsl(a).s.total_cmp(&rgb_to_hsl(b).s))
         .unwrap_or(swatches[0]);
+    // The first swatch is the most prevalent. Preserve its hue when it has
+    // colour; use a chromatic companion only for near-neutral dominant art.
+    let dominant = swatches[0];
+    let dominant_hsl = rgb_to_hsl(dominant);
+    let hue_src = if dominant_hsl.s >= 0.15 && dominant_hsl.l < 0.9 && dominant_hsl.l > 0.08 {
+        dominant
+    } else {
+        hue_src
+    };
     let base_hue = rgb_to_hsl(hue_src).h;
     // ...and if even that swatch is grey, tint nothing: the art has no colour to
     // borrow, so the UI stays neutral rather than picking one at random.
@@ -66,7 +74,7 @@ fn theme_from_swatches(swatches: &[Rgb], name: &'static str) -> Theme {
     let mut ranked: Vec<Rgb> = swatches.to_vec();
     ranked.sort_by(|a, b| vibrance(*b).total_cmp(&vibrance(*a)));
 
-    let primary_src = ranked[0];
+    let primary_src = hue_src;
     let primary_hue = rgb_to_hsl(primary_src).h;
 
     // Accent = the most hue-distant *reasonably vibrant* swatch from primary.
@@ -107,8 +115,8 @@ fn theme_from_swatches(swatches: &[Rgb], name: &'static str) -> Theme {
         warning,
         success,
         info,
-        text: surface(0.14, 0.93),
-        text_muted: surface(0.13, 0.58),
+        text: surface(0.42, 0.84),
+        text_muted: surface(0.35, 0.67),
         // Three background layers, all sharing the album's hue at rising lightness.
         background: surface(0.28, 0.075),
         background_panel: surface(0.26, 0.11),
@@ -159,6 +167,19 @@ mod tests {
         let bg = rgb_to_hsl(theme.background);
         assert!(bg.s > 0.15, "colourful art lost its tint: {}", bg.s);
         assert!(hue_distance(bg.h, 225.0) < 45.0, "hue drifted to {}", bg.h);
+    }
+
+    #[test]
+    fn text_follows_the_dominant_colored_swatch_not_the_most_vivid_accent() {
+        let cover = [
+            Rgb::new(55, 110, 150),
+            Rgb::new(230, 30, 40),
+            Rgb::new(250, 250, 245),
+        ];
+        let theme = theme_from_swatches(&cover, "mixed");
+        assert!(hue_distance(rgb_to_hsl(theme.text).h, rgb_to_hsl(cover[0]).h) < 8.0);
+        assert!(hue_distance(rgb_to_hsl(theme.primary).h, rgb_to_hsl(cover[0]).h) < 8.0);
+        assert!(rgb_to_hsl(theme.text).l >= 0.80);
     }
 
     #[test]

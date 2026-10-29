@@ -46,12 +46,11 @@ use input::*;
 use myx::anim::ThemeFade;
 use myx::audio::{
     EqualizerPreset, EqualizerSettings, EQ_FREQUENCIES_HZ, MAX_EQ_GAIN_DB, MIN_EQ_GAIN_DB,
-    NUM_BANDS, NUM_EQ_BANDS,
+    NUM_EQ_BANDS,
 };
 use myx::components::{gradient_line, gradient_progress, left_bar_block};
 use myx::cover::Cover;
 use myx::engine::{self, Engine, EngineEvent};
-use myx::gradient::{self};
 use myx::liblog::{install_librespot_log, liblog};
 use myx::lyrics::parse::parse_lrc;
 use myx::reactive::derive_theme;

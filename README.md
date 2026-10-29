@@ -78,7 +78,7 @@ the launcher stops its receiver when Myx exits. You can set `SOLOIST_API_KEY`
 in the environment instead of saving a key file.
 
 Soloist handles the audio stream, so Myx's equalizer and audio-reactive spectrum
-are unavailable in this mode. The character field follows playback time instead. Radio is unavailable, and explicit track lists are
+are unavailable in this mode. The ASCII koi animation follows playback time instead. Radio is unavailable, and explicit track lists are
 limited to 100 items. Spotify restricts playlist track lists to playlists you
 own or collaborate on; other playlists can still be played as a whole.
 
