@@ -81,8 +81,14 @@ fn fish_glyph(fish: Fish, x: f32, y: f32, time: f32) -> Option<char> {
         return None;
     }
     let envelope = ((u - 0.08) / 1.02).max(0.0).powf(1.35);
-    let bend = 0.055 * (u * 5.4 - fish.phase - time * 1.65).sin() * envelope;
-    let v = (-dx * sin + dy * cos) / fish.length - bend;
+    // The stroke travels down the spine and gathers force at the tail.
+    // A gentle periodic pulse gives the tail an occasional stronger kick.
+    let stroke = time * 1.85 + fish.phase;
+    let pulse = ((time * 0.46 + fish.phase).sin() * 0.5 + 0.5).powi(3);
+    let bend = (0.065 + 0.045 * pulse) * (u * 5.4 - stroke).sin() * envelope;
+    let mut v = (-dx * sin + dy * cos) / fish.length - bend;
+    // Turn the forked tail slightly around its narrow base as it pushes water.
+    v -= (u - 0.72).max(0.0) * (stroke - u * 4.0).sin() * (0.18 + 0.12 * pulse);
     let av = v.abs();
     let fin = inside(u, av, &FIN) || inside(u, av, &PELVIC);
     let tail = inside(u, v, &TAIL);
@@ -108,33 +114,33 @@ fn fish_glyph(fish: Fish, x: f32, y: f32, time: f32) -> Option<char> {
         });
         let scale = (u * 166.0 + (v * 136.0).cos() * 0.7).sin() * (v * 128.0).cos();
         return Some(if u < 0.11 && av > width * 0.38 {
-            '•'
+            '⣿'
         } else if edge > 0.85 {
-            ':'
+            '⠂'
         } else if patch {
             if scale > 0.0 {
-                '#'
+                '⣿'
             } else {
-                '+'
+                '⠶'
             }
         } else if scale > 0.35 {
-            ':'
+            '⠤'
         } else {
-            '·'
+            '⠒'
         });
     }
     if tail {
         return Some(if (v / (u - 0.72).max(0.01) * 21.0).sin() > 0.25 {
-            '+'
+            '⠶'
         } else {
-            ':'
+            '⠒'
         });
     }
     if fin {
         return Some(if ((u * 0.8 + av * 1.8) * 105.0).sin() > 0.25 {
-            ':'
+            '⠒'
         } else {
-            '.'
+            '⠂'
         });
     }
     None
@@ -194,6 +200,7 @@ pub(crate) fn render_visualizer(f: &mut Frame, app: &App, theme: Theme, area: Re
             }) {
                 let cell = &mut buffer[(area.x + x as u16, area.y + y as u16)];
                 cell.set_char(glyph);
+                cell.set_style(Style::default().add_modifier(Modifier::BOLD));
                 cell.set_fg(if kind == 0 {
                     theme.primary.into()
                 } else {
@@ -224,6 +231,28 @@ mod tests {
         let b = fish_at(100, 20, 5.0, 0);
         assert!((a.x - b.x).abs() + (a.y - b.y).abs() > 1.0);
     }
+    #[test]
+    fn fish_use_only_dot_patterns() {
+        let fish = Fish {
+            x: 40.0,
+            y: 20.0,
+            heading: 0.0,
+            length: 30.0,
+            phase: 0.0,
+            kind: 0,
+        };
+        let mut drawn = 0;
+        for y in 0..40 {
+            for x in 0..80 {
+                if let Some(ch) = fish_glyph(fish, x as f32, y as f32, 0.7) {
+                    assert!(['⣿', '⠶', '⠤', '⠒', '⠂'].contains(&ch));
+                    drawn += 1;
+                }
+            }
+        }
+        assert!(drawn > 50);
+    }
+
     #[test]
     fn small_pond_produces_finite_geometry() {
         for w in [18, 24, 40, 120] {
