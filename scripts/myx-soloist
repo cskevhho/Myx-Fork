@@ -6,7 +6,13 @@ export MYX_SOLOIST_BIN="${MYX_SOLOIST_BIN:-soloist}"
 export MYX_SOLOIST_DATA_DIR="${MYX_SOLOIST_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/myx/soloist}"
 export MYX_SOLOIST_DEVICE="${MYX_SOLOIST_DEVICE:-Myx (Soloist)}"
 export MYX_BACKEND=soloist
-myx_binary="${MYX_BIN:-myx}"
+if [[ -n "${MYX_BIN:-}" ]]; then
+    myx_binary="$MYX_BIN"
+elif command -v myx-player >/dev/null; then
+    myx_binary=myx-player
+else
+    myx_binary=myx
+fi
 key_file="${XDG_CONFIG_HOME:-$HOME/.config}/myx/soloist_api_key"
 cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/myx/soloist"
 
